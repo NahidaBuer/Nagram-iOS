@@ -376,7 +376,8 @@ private func nagramGroups(
     regexFiltersAction: @escaping () -> Void,
     inlineBotRulesAction: @escaping () -> Void,
     llmTranslationSettingsAction: @escaping () -> Void,
-    groupProfileSettingsAction: @escaping () -> Void
+    groupProfileSettingsAction: @escaping () -> Void,
+    versionAction: @escaping () -> Void
 ) -> [NagramGroup] {
     let sensitiveContentEnabled: () -> Bool = {
         return sensitiveContentConfiguration()?.sensitiveContentEnabled ?? false
@@ -508,6 +509,9 @@ private func nagramGroups(
         NagramGroup(tab: .other, headerKey: "Nagram.Section.AutoInlineBot", footerKey: "Nagram.AutoInlineBot.Footer", rows: [
             .toggle(titleKey: "Nagram.AutoInlineBot.Enabled", get: { NagramSettings.shared.autoInlineBotEnabled }, set: { NagramSettings.shared.autoInlineBotEnabled = $0 }),
             .navigation(titleKey: "Nagram.InlineBotRules", action: inlineBotRulesAction),
+        ]),
+        NagramGroup(tab: .other, headerKey: nil, footerKey: nil, rows: [
+            .navigation(titleKey: "Nagram.Version", action: versionAction),
         ]),
     ]
 }
@@ -646,6 +650,9 @@ public func nagramSettingsController(context: AccountContext, deepLinkPath: Stri
     var presentControllerImpl: ((ViewController, ViewControllerPresentationArguments?) -> Void)?
     var presentAgeVerificationImpl: ((@escaping () -> Void) -> Void)?
     var pushControllerImpl: ((ViewController) -> Void)?
+    var sessionBackupCoordinator: NagramSessionBackupCoordinator?
+    var versionTapCount = 0
+    var versionTapGeneration = 0
     let groups = nagramGroups(hideCalls: {
         return !currentShowCallsTab
     }, setHideCalls: { hidden in
@@ -698,6 +705,22 @@ public func nagramSettingsController(context: AccountContext, deepLinkPath: Stri
         pushControllerImpl?(nagramLLMTranslationSettingsController(context: context))
     }, groupProfileSettingsAction: {
         pushControllerImpl?(nagramGroupProfileSettingsController(context: context))
+    }, versionAction: {
+        versionTapCount += 1
+        versionTapGeneration += 1
+        let generation = versionTapGeneration
+        if versionTapCount >= 5 {
+            versionTapCount = 0
+            HapticFeedback().success()
+            sessionBackupCoordinator?.showMenu()
+        } else {
+            HapticFeedback().tap()
+            Queue.mainQueue().after(2.0, {
+                if versionTapGeneration == generation {
+                    versionTapCount = 0
+                }
+            })
+        }
     })
     let flatRows: [NagramRow] = groups.flatMap { $0.rows }
     let flatRowDeepLinks: [String] = groups.flatMap { group in
@@ -888,7 +911,15 @@ public func nagramSettingsController(context: AccountContext, deepLinkPath: Stri
                             entries.append(.slider(stableId: rowStableId, section: sectionId, title: titleKey.map { ngI18n($0, lang) }, minValue: minValue, maxValue: maxValue, value: get(), index: rowIndex))
                         }
                     case let .navigation(titleKey, _):
-                        entries.append(.disclosure(stableId: rowStableId, section: sectionId, title: ngI18n(titleKey, lang), label: "", index: rowIndex))
+                        let label: String
+                        if titleKey == "Nagram.Version" {
+                            let shortVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+                            let buildVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+                            label = buildVersion.isEmpty ? shortVersion : "\(shortVersion) (\(buildVersion))"
+                        } else {
+                            label = ""
+                        }
+                        entries.append(.disclosure(stableId: rowStableId, section: sectionId, title: ngI18n(titleKey, lang), label: label, index: rowIndex))
                     }
                 }
             }
@@ -911,6 +942,7 @@ public func nagramSettingsController(context: AccountContext, deepLinkPath: Stri
     }
 
     let controller = ItemListController(context: context, state: signal)
+    sessionBackupCoordinator = NagramSessionBackupCoordinator(context: context, parent: controller)
     controller.navigationPresentation = .default
     if let autoOpenNavigationAction {
         var didAutoOpenNavigation = false

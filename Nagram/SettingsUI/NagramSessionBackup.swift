@@ -1,4 +1,5 @@
 import AccountContext
+import AccountUtils
 import CryptoKit
 import Foundation
 import MtProtoKit
@@ -42,6 +43,11 @@ struct NagramSessionArchive: Codable {
 enum NagramSessionBackupError: Error {
     case invalidPassword
     case invalidFile
+    case unsupportedFormat
+    case botSession
+    case missingPeerId
+    case capacityExceeded
+    case verificationTimedOut
     case keyDerivationFailed
     case keychain(OSStatus)
     case noBackup
@@ -55,6 +61,76 @@ private struct NagramEncryptedSessionEnvelope: Codable {
     let sealedBox: Data
 }
 
+enum NagramSessionBackupValidator {
+    static let maximumArchiveFileSize = 1024 * 1024
+    private static let maximumPlaintextSize = 768 * 1024
+    private static let maximumLabelLength = 128
+
+    static func validate(_ archive: NagramSessionArchive) throws {
+        guard archive.version == 1,
+              !archive.accounts.isEmpty,
+              archive.accounts.count <= maximumNumberOfAccounts,
+              archive.accounts.filter({ $0.isPrimary }).count <= 1 else {
+            throw NagramSessionBackupError.invalidFile
+        }
+        var accountKeys = Set<String>()
+        for backup in archive.accounts {
+            try self.validate(backup)
+            guard accountKeys.insert("\(backup.testingEnvironment).\(backup.data.peerId)").inserted else {
+                throw NagramSessionBackupError.invalidFile
+            }
+        }
+        guard let encoded = try? JSONEncoder().encode(archive), encoded.count <= self.maximumPlaintextSize else {
+            throw NagramSessionBackupError.invalidFile
+        }
+    }
+
+    static func validate(_ backup: NagramSessionBackup) throws {
+        guard backup.version == 1,
+              backup.data.peerId > 0,
+              !backup.label.isEmpty,
+              backup.label.count <= self.maximumLabelLength else {
+            throw NagramSessionBackupError.invalidFile
+        }
+        let validDatacenters = backup.testingEnvironment ? 1 ... 3 : 1 ... 5
+        guard validDatacenters.contains(Int(backup.data.masterDatacenterId)),
+              backup.data.masterDatacenterKey.count == 256,
+              nagramAuthKeyId(backup.data.masterDatacenterKey) == backup.data.masterDatacenterKeyId else {
+            throw NagramSessionBackupError.invalidFile
+        }
+        for (id, key) in backup.data.additionalDatacenterKeys {
+            guard id == key.id,
+                  (1 ... 10).contains(Int(id)),
+                  id != backup.data.masterDatacenterId,
+                  key.key.count == 256,
+                  nagramAuthKeyId(key.key) == key.keyId else {
+                throw NagramSessionBackupError.invalidFile
+            }
+        }
+        switch (backup.data.notificationEncryptionKeyId, backup.data.notificationEncryptionKey) {
+        case (nil, nil):
+            break
+        case let (id?, key?):
+            let digest = MTSha1(key)
+            guard key.count == 256, digest.count >= 8, id == digest.suffix(8) else {
+                throw NagramSessionBackupError.invalidFile
+            }
+        default:
+            throw NagramSessionBackupError.invalidFile
+        }
+    }
+
+    static func validateAuthorization(_ authorization: NagramExternalSessionAuthorization) throws {
+        let validDatacenters = authorization.testingEnvironment ? 1 ... 3 : 1 ... 5
+        guard validDatacenters.contains(Int(authorization.masterDatacenterId)), authorization.authKey.count == 256 else {
+            throw NagramSessionBackupError.invalidFile
+        }
+        if let peerId = authorization.peerId, peerId <= 0 {
+            throw NagramSessionBackupError.invalidFile
+        }
+    }
+}
+
 enum NagramSessionBackupCrypto {
     static let minimumPasswordLength = 6
     private static let rounds = 600_000
@@ -63,6 +139,7 @@ enum NagramSessionBackupCrypto {
         guard password.count >= minimumPasswordLength else {
             throw NagramSessionBackupError.invalidPassword
         }
+        try NagramSessionBackupValidator.validate(archive)
         var salt = Data(count: 16)
         let randomStatus = salt.withUnsafeMutableBytes { bytes in
             SecRandomCopyBytes(kSecRandomDefault, bytes.count, bytes.baseAddress!)
@@ -77,32 +154,44 @@ enum NagramSessionBackupCrypto {
             throw NagramSessionBackupError.invalidFile
         }
         let envelope = NagramEncryptedSessionEnvelope(version: 1, kdf: "PBKDF2-HMAC-SHA512", rounds: rounds, salt: salt, sealedBox: combined)
-        return try JSONEncoder().encode(envelope).base64EncodedString()
+        let encoded = try JSONEncoder().encode(envelope).base64EncodedString()
+        guard encoded.utf8.count <= NagramSessionBackupValidator.maximumArchiveFileSize else {
+            throw NagramSessionBackupError.invalidFile
+        }
+        return encoded
     }
 
     static func decrypt(_ encoded: String, password: String) throws -> NagramSessionArchive {
-        guard password.count >= minimumPasswordLength,
+        guard password.count >= minimumPasswordLength else {
+            throw NagramSessionBackupError.invalidPassword
+        }
+        guard encoded.utf8.count <= NagramSessionBackupValidator.maximumArchiveFileSize,
               let envelopeData = Data(base64Encoded: encoded.trimmingCharacters(in: .whitespacesAndNewlines)),
+              envelopeData.count <= NagramSessionBackupValidator.maximumArchiveFileSize,
               let envelope = try? JSONDecoder().decode(NagramEncryptedSessionEnvelope.self, from: envelopeData),
               envelope.version == 1,
               envelope.kdf == "PBKDF2-HMAC-SHA512",
-              envelope.rounds >= 100_000 && envelope.rounds <= 2_000_000 else {
+              envelope.rounds == rounds,
+              envelope.salt.count == 16,
+              envelope.sealedBox.count >= 28,
+              envelope.sealedBox.count <= NagramSessionBackupValidator.maximumArchiveFileSize else {
             throw NagramSessionBackupError.invalidFile
         }
+        let plaintext: Data
         do {
             let key = try deriveKey(password: password, salt: envelope.salt, rounds: envelope.rounds)
-            let sealedBox = try AES.GCM.SealedBox(combined: envelope.sealedBox)
-            let plaintext = try AES.GCM.open(sealedBox, using: key)
-            let archive = try JSONDecoder().decode(NagramSessionArchive.self, from: plaintext)
-            guard archive.version == 1, !archive.accounts.isEmpty, archive.accounts.count <= 20,
-                  archive.accounts.allSatisfy({ $0.version == 1 }) else {
-                throw NagramSessionBackupError.invalidFile
-            }
-            return archive
+            plaintext = try AES.GCM.open(AES.GCM.SealedBox(combined: envelope.sealedBox), using: key)
         } catch let error as NagramSessionBackupError {
             throw error
         } catch {
             throw NagramSessionBackupError.invalidPassword
+        }
+        do {
+            let archive = try JSONDecoder().decode(NagramSessionArchive.self, from: plaintext)
+            try NagramSessionBackupValidator.validate(archive)
+            return archive
+        } catch {
+            throw NagramSessionBackupError.invalidFile
         }
     }
 
@@ -119,6 +208,7 @@ enum NagramSessionKeychain {
     private static let account = "archive"
 
     static func save(_ archive: NagramSessionArchive) throws {
+        try NagramSessionBackupValidator.validate(archive)
         let encoded = try JSONEncoder().encode(archive)
         let base: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
@@ -126,7 +216,10 @@ enum NagramSessionKeychain {
             kSecAttrAccount: account,
             kSecAttrSynchronizable: true
         ]
-        let updateStatus = SecItemUpdate(base as CFDictionary, [kSecValueData: encoded] as CFDictionary)
+        let updateStatus = SecItemUpdate(base as CFDictionary, [
+            kSecValueData: encoded,
+            kSecAttrAccessible: kSecAttrAccessibleWhenUnlocked
+        ] as CFDictionary)
         if updateStatus == errSecSuccess {
             return
         }
@@ -156,18 +249,25 @@ enum NagramSessionKeychain {
         if status == errSecItemNotFound {
             return nil
         }
-        guard status == errSecSuccess else {
+        guard status == errSecSuccess, let data = result as? Data else {
             throw NagramSessionBackupError.keychain(status)
         }
-        guard let data = result as? Data else {
-            throw NagramSessionBackupError.invalidFile
-        }
         let archive = try JSONDecoder().decode(NagramSessionArchive.self, from: data)
-        guard archive.version == 1, !archive.accounts.isEmpty, archive.accounts.count <= 20,
-              archive.accounts.allSatisfy({ $0.version == 1 }) else {
-            throw NagramSessionBackupError.invalidFile
-        }
+        try NagramSessionBackupValidator.validate(archive)
         return archive
+    }
+
+    static func delete() throws {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: account,
+            kSecAttrSynchronizable: kSecAttrSynchronizableAny
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw NagramSessionBackupError.keychain(status)
+        }
     }
 }
 
@@ -197,34 +297,98 @@ func nagramCreateSessionArchive(context: AccountContext) -> Signal<NagramSession
             guard !values.isEmpty else {
                 return .fail(.noBackup)
             }
-            return .single(NagramSessionArchive(accounts: values))
+            let archive = NagramSessionArchive(accounts: values)
+            do {
+                try NagramSessionBackupValidator.validate(archive)
+                return .single(archive)
+            } catch let error as NagramSessionBackupError {
+                return .fail(error)
+            } catch {
+                return .fail(.invalidFile)
+            }
         }
     }
 }
 
-private func nagramInstallOriginalSession(context: AccountContext, backup: NagramSessionBackup, makeCurrent: Bool) -> Signal<AccountRecordId, NagramSessionBackupError> {
-    return context.sharedContext.accountManager.transaction { transaction -> AccountRecordId in
-        if let existing = transaction.getRecords().first(where: { record in
-            let hasMatchingBackup = record.attributes.contains(where: { attribute in
-                if case let .backupData(value) = attribute {
-                    return value.data?.peerId == backup.data.peerId
-                }
-                return false
-            })
-            let hasMatchingEnvironment = record.attributes.contains(where: { attribute in
-                if case let .environment(value) = attribute {
-                    return (value.environment == .test) == backup.testingEnvironment
-                }
-                return false
-            })
-            return hasMatchingBackup && hasMatchingEnvironment
-        }) {
-            if makeCurrent {
-                transaction.setCurrentId(existing.id)
-            }
-            return existing.id
+private struct NagramInstalledSessions {
+    let allIds: [AccountRecordId]
+    let newIds: [AccountRecordId]
+    let expectedNewPeerIds: [AccountRecordId: EnginePeer.Id]
+    let targetId: AccountRecordId
+}
+
+func nagramRestoreSessionArchive(context: AccountContext, backups: [NagramSessionBackup]) -> Signal<[AccountRecordId], NagramSessionBackupError> {
+    let archive = NagramSessionArchive(accounts: backups)
+    do {
+        try NagramSessionBackupValidator.validate(archive)
+    } catch let error as NagramSessionBackupError {
+        return .fail(error)
+    } catch {
+        return .fail(.invalidFile)
+    }
+
+    let orderedBackups = backups.enumerated().sorted { lhs, rhs in
+        if lhs.element.sortOrder != rhs.element.sortOrder {
+            return lhs.element.sortOrder < rhs.element.sortOrder
         }
-        let maxSortOrder = transaction.getRecords().compactMap { record -> Int32? in
+        return lhs.offset < rhs.offset
+    }.map(\.element)
+    let pendingNewIds = Atomic<[AccountRecordId]>(value: [])
+    let reachedTerminalState = Atomic<Bool>(value: false)
+
+    func removeRecords(_ ids: [AccountRecordId]) -> Signal<Void, NoError> {
+        guard !ids.isEmpty else {
+            return .single(Void())
+        }
+        return context.sharedContext.accountManager.transaction { transaction -> Void in
+            for id in ids {
+                transaction.updateRecord(id, { _ in nil })
+            }
+        }
+    }
+
+    let install = context.sharedContext.accountManager.transaction { transaction -> Result<NagramInstalledSessions, NagramSessionBackupError> in
+        let records = transaction.getRecords()
+        var productionCount = 0
+        for record in records {
+            let isTest = record.attributes.contains(where: { attribute in
+                if case let .environment(value) = attribute {
+                    return value.environment == .test
+                }
+                return false
+            })
+            if !isTest {
+                productionCount += 1
+            }
+        }
+
+        var existingIds: [String: AccountRecordId] = [:]
+        for record in records {
+            var peerId: Int64?
+            var testingEnvironment = false
+            for attribute in record.attributes {
+                switch attribute {
+                case let .backupData(value):
+                    peerId = value.data?.peerId
+                case let .environment(value):
+                    testingEnvironment = value.environment == .test
+                default:
+                    break
+                }
+            }
+            if let peerId {
+                existingIds["\(testingEnvironment).\(peerId)"] = record.id
+            }
+        }
+
+        let newProductionCount = orderedBackups.filter { backup in
+            !backup.testingEnvironment && existingIds["\(backup.testingEnvironment).\(backup.data.peerId)"] == nil
+        }.count
+        guard productionCount + newProductionCount <= maximumNumberOfAccounts else {
+            return .failure(.capacityExceeded)
+        }
+
+        let maxSortOrder = records.compactMap { record -> Int32? in
             for attribute in record.attributes {
                 if case let .sortOrder(value) = attribute {
                     return value.order
@@ -232,44 +396,102 @@ private func nagramInstallOriginalSession(context: AccountContext, backup: Nagra
             }
             return nil
         }.max() ?? -1
-        let id = transaction.createRecord([
-            .environment(AccountEnvironmentAttribute(environment: backup.testingEnvironment ? .test : .production)),
-            .backupData(AccountBackupDataAttribute(data: backup.data)),
-            .sortOrder(AccountSortOrderAttribute(order: max(backup.sortOrder, maxSortOrder + 1)))
-        ])
-        if makeCurrent {
-            transaction.setCurrentId(id)
+        let newAccountCount = orderedBackups.filter { backup in
+            existingIds["\(backup.testingEnvironment).\(backup.data.peerId)"] == nil
+        }.count
+        guard Int64(maxSortOrder) + Int64(newAccountCount) <= Int64(Int32.max) else {
+            return .failure(.capacityExceeded)
         }
-        return id
+        var nextSortOrder = Int64(maxSortOrder)
+        var allIds: [AccountRecordId] = []
+        var newIds: [AccountRecordId] = []
+        var expectedNewPeerIds: [AccountRecordId: EnginePeer.Id] = [:]
+        for backup in orderedBackups {
+            let key = "\(backup.testingEnvironment).\(backup.data.peerId)"
+            if let existingId = existingIds[key] {
+                allIds.append(existingId)
+                continue
+            }
+            nextSortOrder += 1
+            let id = transaction.createRecord([
+                .environment(AccountEnvironmentAttribute(environment: backup.testingEnvironment ? .test : .production)),
+                .backupData(AccountBackupDataAttribute(data: backup.data)),
+                .sortOrder(AccountSortOrderAttribute(order: Int32(nextSortOrder)))
+            ])
+            allIds.append(id)
+            newIds.append(id)
+            expectedNewPeerIds[id] = EnginePeer.Id(backup.data.peerId)
+        }
+        guard let firstId = allIds.first else {
+            return .failure(.noBackup)
+        }
+        let targetIndex = orderedBackups.firstIndex(where: { $0.isPrimary }) ?? 0
+        let targetId = allIds.indices.contains(targetIndex) ? allIds[targetIndex] : firstId
+        _ = pendingNewIds.swap(newIds)
+        return .success(NagramInstalledSessions(allIds: allIds, newIds: newIds, expectedNewPeerIds: expectedNewPeerIds, targetId: targetId))
     }
     |> castError(NagramSessionBackupError.self)
-}
+    |> mapToSignal { result -> Signal<[AccountRecordId], NagramSessionBackupError> in
+        let installed: NagramInstalledSessions
+        switch result {
+        case let .success(value):
+            installed = value
+        case let .failure(error):
+            return .fail(error)
+        }
 
-func nagramRestoreSessionArchive(context: AccountContext, backups: [NagramSessionBackup]) -> Signal<[AccountRecordId], NagramSessionBackupError> {
-    var uniqueKeys = Set<String>()
-    let uniqueBackups = backups.sorted(by: { $0.sortOrder < $1.sortOrder }).filter { backup in
-        uniqueKeys.insert("\(backup.testingEnvironment).\(backup.data.peerId)").inserted
-    }
-    guard !uniqueBackups.isEmpty else {
-        return .fail(.noBackup)
-    }
-
-    func restore(index: Int, ids: [AccountRecordId]) -> Signal<[AccountRecordId], NagramSessionBackupError> {
-        guard index < uniqueBackups.count else {
-            let primaryIndex = uniqueBackups.firstIndex(where: { $0.isPrimary }) ?? 0
-            return context.sharedContext.accountManager.transaction { transaction -> [AccountRecordId] in
-                if ids.indices.contains(primaryIndex) {
-                    transaction.setCurrentId(ids[primaryIndex])
+        let verified: Signal<Void, NagramSessionBackupError>
+        if installed.newIds.isEmpty {
+            verified = .single(Void())
+        } else {
+            verified = context.sharedContext.activeAccountsWithInfo
+            |> filter { value in
+                return installed.expectedNewPeerIds.allSatisfy { id, peerId in
+                    value.accounts.contains(where: { $0.account.id == id && $0.peer.id == peerId })
                 }
-                return ids
+            }
+            |> take(1)
+            |> map { _ in Void() }
+            |> castError(NagramSessionBackupError.self)
+            |> timeout(60.0, queue: .mainQueue(), alternate: .fail(.verificationTimedOut))
+        }
+        return verified
+        |> mapToSignal { _ -> Signal<[AccountRecordId], NagramSessionBackupError> in
+            return context.sharedContext.accountManager.transaction { transaction -> Bool in
+                guard transaction.getRecords().contains(where: { $0.id == installed.targetId }) else {
+                    return false
+                }
+                transaction.setCurrentId(installed.targetId)
+                return true
             }
             |> castError(NagramSessionBackupError.self)
+            |> mapToSignal { success -> Signal<[AccountRecordId], NagramSessionBackupError> in
+                guard success else {
+                    return .fail(.verificationTimedOut)
+                }
+                _ = pendingNewIds.swap([])
+                _ = reachedTerminalState.swap(true)
+                return .single(installed.allIds)
+            }
         }
-        return nagramInstallOriginalSession(context: context, backup: uniqueBackups[index], makeCurrent: false)
-        |> mapToSignal { id in
-            restore(index: index + 1, ids: ids + [id])
+    }
+    |> `catch` { error -> Signal<[AccountRecordId], NagramSessionBackupError> in
+        let ids = pendingNewIds.swap([])
+        return removeRecords(ids)
+        |> castError(NagramSessionBackupError.self)
+        |> mapToSignal { _ -> Signal<[AccountRecordId], NagramSessionBackupError> in
+            _ = reachedTerminalState.swap(true)
+            return .fail(error)
+        }
+    }
+    |> afterDisposed {
+        if !reachedTerminalState.swap(true) {
+            let ids = pendingNewIds.swap([])
+            if !ids.isEmpty {
+                let _ = removeRecords(ids).start()
+            }
         }
     }
 
-    return restore(index: 0, ids: [])
+    return install
 }

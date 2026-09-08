@@ -133,6 +133,10 @@ private func nagramRowDeepLinkAliases(titleKey: String) -> [String] {
         return ["LLMModel", "OpenAIModel"]
     case "Nagram.TranslationLLMAPIKey":
         return ["LLMApiKey", "OpenAIApiKey"]
+    case "Nagram.STTProvider":
+        return ["STT", "SpeechToText", "TranscriptionProvider"]
+    case "Nagram.STTSettings":
+        return ["STTSettings", "TranscriptionSettings", "STTAPI", "CustomSTT"]
     case "Nagram.DownloadSpeedBoost":
         return ["enhancedFileLoader", "downloadSpeedBoost"]
     case "Nagram.UploadSpeedBoost":
@@ -380,6 +384,7 @@ private func nagramGroups(
     regexFiltersAction: @escaping () -> Void,
     inlineBotRulesAction: @escaping () -> Void,
     llmTranslationSettingsAction: @escaping () -> Void,
+    sttSettingsAction: @escaping () -> Void,
     groupProfileSettingsAction: @escaping () -> Void
 ) -> [NagramGroup] {
     let sensitiveContentEnabled: () -> Bool = {
@@ -448,6 +453,10 @@ private func nagramGroups(
             .navigation(titleKey: "Nagram.TranslationLLMSettings", action: llmTranslationSettingsAction),
             .toggle(titleKey: "Nagram.TranslateBeforeSend", get: { NagramSettings.shared.translateBeforeSend }, set: { NagramSettings.shared.translateBeforeSend = $0 }),
             .choice(titleKey: "Nagram.TranslateBeforeSendTargetLang", prefix: "Nagram.TranslateBeforeSendTargetLang", options: ["en", "ar", "zh", "fr", "de", "it", "ja", "ko", "pt-BR", "ru", "es", "uk"], current: { NagramSettings.shared.translateBeforeSendTargetLang }, set: { NagramSettings.shared.translateBeforeSendTargetLang = $0 }),
+        ]),
+        NagramGroup(tab: .chat, headerKey: "Nagram.Section.STT", footerKey: "Nagram.Section.STT.Footer", rows: [
+            .choice(titleKey: "Nagram.STTProvider", prefix: "Nagram.STTProvider", options: ["default", "openAICompatible"], current: { NagramSettings.shared.sttProvider == "openAICompatible" ? "openAICompatible" : "default" }, set: { NagramSettings.shared.sttProvider = $0 }),
+            .navigation(titleKey: "Nagram.STTSettings", action: sttSettingsAction),
         ]),
         NagramGroup(tab: .chat, headerKey: "Nagram.Section.Pangu", footerKey: "Nagram.PanguInfo", rows: [
             .toggle(titleKey: "Nagram.PanguOnReceiving", get: { NagramSettings.shared.enablePanguOnReceiving }, set: { NagramSettings.shared.enablePanguOnReceiving = $0 }),
@@ -710,6 +719,8 @@ public func nagramSettingsController(context: AccountContext, deepLinkPath: Stri
         pushControllerImpl?(nagramInlineBotRulesController(context: context))
     }, llmTranslationSettingsAction: {
         pushControllerImpl?(nagramLLMTranslationSettingsController(context: context))
+    }, sttSettingsAction: {
+        pushControllerImpl?(nagramSTTSettingsController(context: context))
     }, groupProfileSettingsAction: {
         pushControllerImpl?(nagramGroupProfileSettingsController(context: context))
     })

@@ -275,7 +275,10 @@ filegroup(
     name = "AppResources",
     srcs = glob([
         "Telegram-iOS/Resources/**/*",
-    ], exclude = ["Telegram-iOS/Resources/**/.*"]),
+    ], exclude = ["Telegram-iOS/Resources/**/.*"]) + [
+        # MARK: NAGRAM — Fixed speech sample for the user-triggered STT API test.
+        "//Nagram/Transcription:TestAudio",
+    ],
 )
 
 filegroup(

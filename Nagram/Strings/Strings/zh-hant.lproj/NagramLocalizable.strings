@@ -15,7 +15,10 @@
 "Nagram.InlineBotRules.Footer" = "規則由 Nagram metadata 提供；配對時保留輸入框中的原始連結。";
 
 "Nagram.Section.Camera" = "相機";
-"Nagram.Section.Camera.Footer" = "聊天附件面板中的相機入口與即時預覽。";
+"Nagram.Section.Camera.Footer" = "聊天附件面板中的相機入口與即時預覽，以及圓形影片拍攝預設使用的相機。";
+"Nagram.RoundVideoCamera" = "圓形影片預設相機";
+"Nagram.RoundVideoCamera.front" = "前置";
+"Nagram.RoundVideoCamera.back" = "後置";
 "Nagram.Section.MessageDisplay" = "訊息顯示";
 "Nagram.Section.MessageList" = "訊息列表";
 "Nagram.StayAtLatestMessageAfterRefresh" = "重新整理後保持最新訊息";

@@ -15,7 +15,10 @@
 "Nagram.InlineBotRules.Footer" = "规则由 Nagram metadata 提供；匹配时保留输入框中的原始链接。";
 
 "Nagram.Section.Camera" = "相机";
-"Nagram.Section.Camera.Footer" = "聊天附件面板中的相机入口与实时预览。";
+"Nagram.Section.Camera.Footer" = "聊天附件面板中的相机入口与实时预览，以及圆形视频拍摄默认使用的摄像头。";
+"Nagram.RoundVideoCamera" = "圆形视频默认摄像头";
+"Nagram.RoundVideoCamera.front" = "前置";
+"Nagram.RoundVideoCamera.back" = "后置";
 "Nagram.Section.MessageDisplay" = "消息显示";
 "Nagram.Section.MessageList" = "消息列表";
 "Nagram.StayAtLatestMessageAfterRefresh" = "刷新后保持最新消息";

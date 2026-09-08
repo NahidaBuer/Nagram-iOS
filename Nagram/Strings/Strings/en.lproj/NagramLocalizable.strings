@@ -15,7 +15,10 @@
 "Nagram.InlineBotRules.Footer" = "Rules are supplied by Nagram metadata. The original link remains in the compose field.";
 
 "Nagram.Section.Camera" = "Camera";
-"Nagram.Section.Camera.Footer" = "Camera entry and live preview in the attachment menu.";
+"Nagram.Section.Camera.Footer" = "Camera entry and live preview in the attachment menu, and the default camera for round video messages.";
+"Nagram.RoundVideoCamera" = "Default Camera for Round Videos";
+"Nagram.RoundVideoCamera.front" = "Front";
+"Nagram.RoundVideoCamera.back" = "Rear";
 "Nagram.Section.MessageDisplay" = "Message Display";
 "Nagram.Section.MessageList" = "Message List";
 "Nagram.StayAtLatestMessageAfterRefresh" = "Stay at Latest After Refresh";

@@ -812,13 +812,18 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                 var textString: NSAttributedString?
                 var updatedAudioTranscriptionState: AudioTranscriptionButtonComponent.TranscriptionState?
                 
+                // MARK: NAGRAM — Existing transcripts stay readable when the provider changes.
+                let transcribedText = forcedAudioTranscriptionText ?? transcribedText(message: EngineMessage(arguments.message))
+
                 var displayTranscribe = false
                 if Namespaces.Message.allNonRegular.contains(arguments.message.id.namespace) {
                     displayTranscribe = false
                 } else if arguments.message.id.peerId.namespace != Namespaces.Peer.SecretChat && !isViewOnceMessage && !arguments.presentationData.isPreview {
                     let premiumConfiguration = PremiumConfiguration.with(appConfiguration: arguments.context.currentAppConfiguration.with { $0 })
                     // MARK: NAGRAM — Custom STT is available without Telegram Premium or a trial.
-                    if NagramTranscriptionService.isEnabled {
+                    if let result = transcribedText, case .success = result {
+                        displayTranscribe = true
+                    } else if NagramTranscriptionService.isEnabled {
                         displayTranscribe = arguments.message.id.namespace == Namespaces.Message.Cloud
                     } else if arguments.associatedData.isPremium || arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
                         displayTranscribe = true
@@ -836,8 +841,6 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                         }
                     }
                 }
-                
-                let transcribedText = forcedAudioTranscriptionText ?? transcribedText(message: EngineMessage(arguments.message))
                 
                 switch audioTranscriptionState {
                 case .inProgress:

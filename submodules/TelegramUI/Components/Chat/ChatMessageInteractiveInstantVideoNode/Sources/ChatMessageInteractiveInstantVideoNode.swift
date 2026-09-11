@@ -850,8 +850,10 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
                     var displayTranscribe = false
                     if item.message.id.peerId.namespace != Namespaces.Peer.SecretChat && statusDisplayType == .free && !isViewOnceMessage && !item.presentationData.isPreview {
                         let premiumConfiguration = PremiumConfiguration.with(appConfiguration: item.context.currentAppConfiguration.with { $0 })
-                        // MARK: NAGRAM — Custom STT is independent of Telegram Premium and trials.
-                        if NagramTranscriptionService.isEnabled {
+                        // MARK: NAGRAM — Existing transcripts remain accessible; custom STT has its own limits.
+                        if let result = transcribedText, case .success = result {
+                            displayTranscribe = true
+                        } else if NagramTranscriptionService.isEnabled {
                             displayTranscribe = item.message.id.namespace == Namespaces.Message.Cloud
                         } else if item.associatedData.isPremium || item.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
                             displayTranscribe = true

@@ -428,6 +428,7 @@ private func nagramGroups(
         NagramGroup(tab: .general, headerKey: "Nagram.Section.Camera", footerKey: "Nagram.Section.Camera.Footer", rows: [
             .toggle(titleKey: "Nagram.DisableGalleryCamera", get: { NagramSettings.shared.disableGalleryCamera }, set: { NagramSettings.shared.disableGalleryCamera = $0 }),
             .toggle(titleKey: "Nagram.DisableGalleryCameraPreview", get: { NagramSettings.shared.disableGalleryCameraPreview }, set: { NagramSettings.shared.disableGalleryCameraPreview = $0 }),
+            .choice(titleKey: "Nagram.RoundVideoCamera", prefix: "Nagram.RoundVideoCamera", options: ["front", "back"], current: { NagramSettings.shared.roundVideoCameraValue.rawValue }, set: { NagramSettings.shared.roundVideoCamera = $0 }),
         ]),
         NagramGroup(tab: .general, headerKey: "Nagram.Section.Network", footerKey: nil, rows: [
             .choice(titleKey: "Nagram.DownloadSpeedBoost", prefix: "Nagram.DownloadSpeedBoost", options: ["none", "medium", "maximum"], current: { NagramSettings.shared.downloadSpeedBoost }, set: { NagramSettings.shared.downloadSpeedBoost = $0 }),

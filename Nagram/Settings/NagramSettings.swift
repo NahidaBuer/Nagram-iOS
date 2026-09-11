@@ -84,6 +84,11 @@ public enum NagramGlassTransparencyMode: String {
     case custom
 }
 
+public enum NagramRoundVideoCamera: String {
+    case front
+    case back
+}
+
 public enum NagramGroupProfileSettingItem: String, CaseIterable, Hashable {
     case groupType
     case inviteLinks
@@ -190,6 +195,9 @@ public final class NagramSettings {
     /// 禁用图库内相机实时预览
     @NagramDefault("nagram.disableGalleryCameraPreview", false)
     public var disableGalleryCameraPreview: Bool
+    /// 圆形视频拍摄默认使用的摄像头
+    @NagramDefault("nagram.roundVideoCamera", NagramRoundVideoCamera.front.rawValue)
+    public var roundVideoCamera: String
     /// 隐藏「以频道身份发送」按钮
     @NagramDefault("nagram.disableSendAsButton", false)
     public var disableSendAsButton: Bool
@@ -595,6 +603,10 @@ public extension NagramSettings {
 
     var glassTransparencyModeValue: NagramGlassTransparencyMode {
         return NagramGlassTransparencyMode(rawValue: self.glassTransparencyMode) ?? .system
+    }
+
+    var roundVideoCameraValue: NagramRoundVideoCamera {
+        return NagramRoundVideoCamera(rawValue: self.roundVideoCamera) ?? .front
     }
 
     var glassTransparencyPercentValue: Int32 {

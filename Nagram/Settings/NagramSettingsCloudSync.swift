@@ -11,6 +11,7 @@ enum NagramSettingsSyncKeys {
         "nagram.disableScrollToNextTopic",
         "nagram.disableGalleryCamera",
         "nagram.disableGalleryCameraPreview",
+        "nagram.roundVideoCamera",
         "nagram.disableSendAsButton",
         "nagram.hideRecordingButton",
         "nagram.secondsInMessages",

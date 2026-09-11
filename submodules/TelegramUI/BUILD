@@ -77,6 +77,7 @@ swift_library(
         "//Nagram/Strings:NagramStrings",
         "//Nagram/SettingsUI:NagramSettingsUI",
         "//Nagram/Translate:NagramTranslate",  # MARK: NAGRAM
+        "//Nagram/Transcription:NagramTranscription",  # MARK: NAGRAM
         "//submodules/MediaPlayer:UniversalMediaPlayer",
         "//submodules/TelegramVoip:TelegramVoip",
         "//submodules/DeviceAccess:DeviceAccess",

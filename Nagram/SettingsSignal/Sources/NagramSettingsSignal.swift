@@ -40,6 +40,22 @@ public func nagramStringSignal(_ key: String, defaultValue: String) -> Signal<St
     return (initial |> then(changes)) |> distinctUntilChanged
 }
 
+public func nagramSTTSettingsSignal() -> Signal<Int32, NoError> {
+    return Signal { subscriber in
+        let version = Atomic<Int32>(value: 0)
+        subscriber.putNext(0)
+        let changed: (Notification) -> Void = { _ in
+            subscriber.putNext(version.modify { $0 &+ 1 })
+        }
+        let defaultsObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: NagramDemoMode.userDefaults, queue: nil, using: changed)
+        let keyObserver = NotificationCenter.default.addObserver(forName: NagramSettings.sttSettingsDidChangeNotification, object: nil, queue: nil, using: changed)
+        return ActionDisposable {
+            NotificationCenter.default.removeObserver(defaultsObserver)
+            NotificationCenter.default.removeObserver(keyObserver)
+        }
+    }
+}
+
 public func nagramRecentStickerLimitSignal() -> Signal<Int, NoError> {
     let initial = Signal<Int, NoError>.single(NagramSettings.shared.recentStickerLimitValue)
     let changes = Signal<Int, NoError> { subscriber in

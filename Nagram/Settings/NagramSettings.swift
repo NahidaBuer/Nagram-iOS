@@ -433,6 +433,31 @@ public final class NagramSettings {
     @NagramDefault("nagram.translateBeforeSendTargetLang", "en")
     public var translateBeforeSendTargetLang: String
 
+    // MARK: NAGRAM — Custom speech-to-text provider.
+    @NagramDefault("nagram.sttProvider", "default")
+    public var sttProvider: String
+    @NagramDefault("nagram.sttBaseURL", "")
+    public var sttBaseURL: String
+    @NagramDefault("nagram.sttEndpoint", "")
+    public var sttEndpoint: String
+    @NagramDefault("nagram.sttModel", "")
+    public var sttModel: String
+    @NagramDefault("nagram.sttLanguage", "")
+    public var sttLanguage: String
+    @NagramDefault("nagram.sttPrompt", "")
+    public var sttPrompt: String
+
+    public static let sttSettingsDidChangeNotification = Notification.Name("NagramSTTSettingsDidChange")
+
+    public var sttAPIKey: String {
+        return (try? NagramSTTKeychain.read()) ?? ""
+    }
+
+    public func setSTTAPIKey(_ value: String) throws {
+        try NagramSTTKeychain.write(value.trimmingCharacters(in: .whitespacesAndNewlines))
+        NotificationCenter.default.post(name: Self.sttSettingsDidChangeNotification, object: nil)
+    }
+
     // MARK: 波次 3 批 D — 需新逻辑
     /// 回车键发送消息
     @NagramDefault("nagram.sendWithReturnKey", false)

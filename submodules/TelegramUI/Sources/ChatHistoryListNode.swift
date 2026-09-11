@@ -40,6 +40,7 @@ import PhoneNumberFormat
 import Postbox
 import NagramSettings // MARK: NAGRAM
 import NagramSettingsSignal // MARK: NAGRAM
+import NagramTranscription // MARK: NAGRAM
 
 struct ChatTopVisibleMessageRange: Equatable {
     var lowerBound: MessageIndex
@@ -1914,8 +1915,13 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                 return historyViewUpdateValue
             }
         }
-        historyViewUpdate = combineLatest(queue: .mainQueue(), historyViewUpdate, nagramRegexFiltersSignal()) // MARK: NAGRAM — 规则变化时重算聊天条目。
-        |> map { update, _ in
+        // MARK: NAGRAM — Only provider availability changes affect message layouts; defer Defaults reads.
+        let customTranscriptionEnabled = nagramSTTSettingsSignal()
+        |> deliverOnMainQueue
+        |> map { _ in NagramTranscriptionService.isEnabled }
+        |> distinctUntilChanged
+        historyViewUpdate = combineLatest(queue: .mainQueue(), historyViewUpdate, nagramRegexFiltersSignal(), customTranscriptionEnabled)
+        |> map { update, _, _ in
             return update
         }
                 

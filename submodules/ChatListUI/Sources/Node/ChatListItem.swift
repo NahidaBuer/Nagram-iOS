@@ -505,11 +505,20 @@ public class ChatListItem: ListViewItem {
     let displayHiddenPeerIcon: Bool
     
     // MARK: NAGRAM — 只控制聊天列表头像，保留社区内部和资料页行为。
-    var nagramHidesAvatarStories: Bool {
-        guard case .chatList = self.chatListLocation, !self.useCommunityViewLayout else {
+    var nagramUsesAvatarSettings: Bool {
+        guard case .chatList = self.chatListLocation else {
             return false
         }
-        return NagramSettings.shared.disableChatAvatarStoriesEffective
+        return !self.useCommunityViewLayout && !self.hideCommunityAvatarBadge
+    }
+
+    var nagramHidesAvatarStories: Bool {
+        return self.nagramUsesAvatarSettings && NagramSettings.shared.disableChatAvatarStoriesEffective
+    }
+
+    // MARK: NAGRAM — 头像主体只在“打开社区”模式下拦截普通行点击。
+    var nagramOpensCommunityFromAvatar: Bool {
+        return !NagramSettings.shared.disableCommunityChatGrouping && (!self.nagramUsesAvatarSettings || NagramSettings.shared.communityAvatarTapActionValue == .community)
     }
 
     public let selectable: Bool = true
@@ -616,6 +625,10 @@ public class ChatListItem: ListViewItem {
     }
     
     public func selected(listView: ListView) {
+        self.nagramSelectChat() // MARK: NAGRAM — 与头像回退共用列表原有导航逻辑。
+    }
+
+    fileprivate func nagramSelectChat() {
         switch self.content {
         case .loading:
             break
@@ -1422,6 +1435,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
     private let communityAvatarShadowNode: ASImageNode
     private var communityAvatarBadgeBackgroundView: GlassBackgroundView?
     private var communityAvatarBadgeIconView: GlassBackgroundView.ContentImageView?
+    private var nagramCommunityArrowButton: UIButton? // MARK: NAGRAM
     public let avatarNode: AvatarNode
     var avatarIconView: ComponentHostView<Empty>?
     var avatarIconComponent: EmojiStatusComponent?
@@ -1885,10 +1899,10 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
         if self.nagramAvatarSettingsDisposable == nil {
             self.nagramAvatarSettingsDisposable = (combineLatest(
                 nagramBoolSignal("nagram.hideStories", defaultValue: false),
-                nagramBoolSignal("nagram.disableChatAvatarStories", defaultValue: false)
+                nagramBoolSignal("nagram.disableChatAvatarStories", defaultValue: false),
+                nagramStringSignal("nagram.communityAvatarTapAction", defaultValue: NagramCommunityAvatarTapAction.community.rawValue),
+                nagramBoolSignal("nagram.disableCommunityChatGrouping", defaultValue: false)
             )
-            |> map { $0 || $1 }
-            |> distinctUntilChanged
             |> deliverOnMainQueue).start(next: { [weak self] _ in
                 // 异步到下一轮，避免初始订阅重入和 UserDefaults setter 的独占访问。
                 Queue.mainQueue().justDispatch { [weak self] in
@@ -1913,6 +1927,10 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
         
         // MARK: NAGRAM — 关闭头像动态时同时移除动态圈、直播标记和手势。
         if item.nagramHidesAvatarStories {
+            storyState = nil
+        }
+        // MARK: NAGRAM — 已过期的空动态状态不应抢占社区或聊天点击。
+        if item.nagramUsesAvatarSettings, let stats = storyState?.stats, stats.totalCount == 0 && !stats.hasLiveItems {
             storyState = nil
         }
 
@@ -1967,7 +1985,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             lineWidth: 2.33,
             inactiveLineWidth: 1.33
         ), transition: .immediate)
-        self.avatarNode.isUserInteractionEnabled = !item.useCommunityViewLayout && ((storyState != nil && !peerIsCommunity) || (peerLinkedCommunityId != nil && !NagramSettings.shared.disableCommunityChatGrouping)) // MARK: NAGRAM — 拆分显示时恢复普通聊天的头像手势命中
+        self.avatarNode.isUserInteractionEnabled = !item.useCommunityViewLayout && !item.editing && !item.hasActiveRevealControls && ((storyState != nil && !peerIsCommunity) || (peerLinkedCommunityId != nil && item.nagramOpensCommunityFromAvatar)) // MARK: NAGRAM — 其余模式让头像主体走普通行点击
         
         if let stats = storyState?.stats, stats.hasLiveItems {
             if self.avatarLiveBadge == nil {
@@ -4356,7 +4374,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         strongSelf.communityAvatarShadowNode.isHidden = true
                     }
 
-                    if useChatListLayout && displayCommunityAvatarBadge && avatarContentImageSpec == nil && !item.useCommunityViewLayout && !NagramSettings.shared.disableCommunityChatGrouping { // MARK: NAGRAM — 防止旧异步布局在返回列表时恢复展开徽标
+                    if useChatListLayout && displayCommunityAvatarBadge && avatarContentImageSpec == nil && !item.useCommunityViewLayout && !NagramSettings.shared.disableCommunityChatGrouping && (!item.nagramUsesAvatarSettings || NagramSettings.shared.communityAvatarTapActionValue != .chat) { // MARK: NAGRAM — 按当前设置决定徽标，防止旧异步布局恢复它
                         let communityAvatarBadgeBackgroundView: GlassBackgroundView
                         let communityAvatarBadgeIconView: GlassBackgroundView.ContentImageView
                         if let currentBackgroundView = strongSelf.communityAvatarBadgeBackgroundView, let currentIconView = strongSelf.communityAvatarBadgeIconView {
@@ -4387,6 +4405,24 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         communityAvatarBadgeBackgroundView.update(size: badgeSize, cornerRadius: badgeSize.height * 0.5, isDark: item.presentationData.theme.overallDarkAppearance, tintColor: .init(kind: .panel), transition: ComponentTransition(transition))
                         transition.updateFrame(view: communityAvatarBadgeBackgroundView, frame: badgeFrame)
 
+                        // MARK: NAGRAM — 箭头独立命中，头像主体仍保留动态或普通聊天行为。
+                        if item.nagramUsesAvatarSettings && NagramSettings.shared.communityAvatarTapActionValue == .arrow {
+                            let button: UIButton
+                            if let current = strongSelf.nagramCommunityArrowButton {
+                                button = current
+                            } else {
+                                button = UIButton(type: .custom)
+                                button.addTarget(strongSelf, action: #selector(ChatListItemNode.nagramCommunityArrowPressed), for: .touchUpInside)
+                                strongSelf.avatarContainerNode.view.addSubview(button)
+                                strongSelf.nagramCommunityArrowButton = button
+                            }
+                            button.isHidden = item.editing || item.hasActiveRevealControls || item.interaction.inlineNavigationLocation != nil
+                            button.accessibilityLabel = ngI18n("Nagram.CommunityAvatarTapAction.community", item.presentationData.strings.baseLanguageCode)
+                            transition.updateFrame(view: button, frame: badgeFrame)
+                        } else {
+                            strongSelf.nagramCommunityArrowButton?.isHidden = true
+                        }
+
                         if let arrowImage = UIImage(bundleImageName: "Media Editor/DownArrow")?.withRenderingMode(.alwaysTemplate) {
                             communityAvatarBadgeIconView.image = arrowImage
                             communityAvatarBadgeIconView.tintColor = theme.titleColor
@@ -4395,6 +4431,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         }
                     } else {
                         strongSelf.communityAvatarBadgeBackgroundView?.isHidden = true
+                        strongSelf.nagramCommunityArrowButton?.isHidden = true // MARK: NAGRAM
                     }
 
                     transition.updatePosition(node: strongSelf.avatarNode, position: avatarFrame.offsetBy(dx: -avatarFrame.minX, dy: -avatarFrame.minY).center.offsetBy(dx: avatarScaleOffset, dy: 0.0))
@@ -5973,6 +6010,15 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             }
         }
         
+        // MARK: NAGRAM — 明确的箭头点击优先于头像动态手势。
+        if !item.editing, !item.hasActiveRevealControls, item.interaction.inlineNavigationLocation == nil,
+           item.nagramUsesAvatarSettings, !NagramSettings.shared.disableCommunityChatGrouping,
+           NagramSettings.shared.communityAvatarTapActionValue == .arrow,
+           let button = self.nagramCommunityArrowButton, !button.isHidden,
+           button.bounds.contains(self.view.convert(point, to: button)) {
+            return button
+        }
+
         if let _ = item.interaction.inlineNavigationLocation {
         } else {
             var isCommunity = false
@@ -5980,7 +6026,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                 isCommunity = true
             }
             var shouldHitTestAvatar = !isCommunity && !item.nagramHidesAvatarStories && self.avatarNode.storyStats != nil // MARK: NAGRAM
-            if !NagramSettings.shared.disableCommunityChatGrouping, case let .peer(peerData) = item.content, let peer = peerData.peer.peer, peer.containerPeerId != nil { // MARK: NAGRAM — 拆分显示时不再为 Community 入口扩大头像点击区域
+            if item.nagramOpensCommunityFromAvatar, case let .peer(peerData) = item.content, let peer = peerData.peer.peer, peer.containerPeerId != nil { // MARK: NAGRAM — 仅在整个头像打开社区时扩大命中区域
                 shouldHitTestAvatar = true
             }
             if shouldHitTestAvatar {
@@ -5993,9 +6039,47 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
         return super.hitTest(point, with: event)
     }
     
+    // MARK: NAGRAM — 箭头的点击不经过动态分支，并再次检查设置防止旧布局命中。
+    @objc private func nagramCommunityArrowPressed() {
+        guard let item = self.item, item.nagramUsesAvatarSettings, !item.editing, !item.hasActiveRevealControls,
+              item.interaction.inlineNavigationLocation == nil,
+              !NagramSettings.shared.disableCommunityChatGrouping,
+              NagramSettings.shared.communityAvatarTapActionValue == .arrow,
+              case let .peer(peerData) = item.content,
+              let communityId = peerData.peer.peer?.containerPeerId else {
+            return
+        }
+        item.interaction.openCommunity(communityId)
+    }
+
     @objc private func avatarStoryTapGesture(_ recognizer: UITapGestureRecognizer) {
         if case .ended = recognizer.state {
             guard let item = self.item else {
+                return
+            }
+            // MARK: NAGRAM — 有动态优先动态；没有动态时遵循社区模式或列表行导航。
+            if item.nagramUsesAvatarSettings {
+                guard !item.editing, !item.hasActiveRevealControls, item.interaction.inlineNavigationLocation == nil else {
+                    return
+                }
+                switch item.content {
+                case .loading:
+                    return
+                case let .peer(peerData):
+                    if !item.nagramHidesAvatarStories, let stats = peerData.storyState?.stats, stats.totalCount > 0 || stats.hasLiveItems {
+                        item.interaction.openStories(.peer(peerData.peer.peerId), self)
+                    } else if item.nagramOpensCommunityFromAvatar, let communityId = peerData.peer.peer?.containerPeerId {
+                        item.interaction.openCommunity(communityId)
+                    } else {
+                        item.nagramSelectChat()
+                    }
+                case .groupReference:
+                    if !item.nagramHidesAvatarStories, self.avatarNode.storyStats != nil {
+                        item.interaction.openStories(.archive, self)
+                    } else {
+                        item.nagramSelectChat()
+                    }
+                }
                 return
             }
             switch item.content {

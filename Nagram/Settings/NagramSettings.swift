@@ -62,6 +62,12 @@ public enum NagramChatListSwipeAction: String {
     }
 }
 
+public enum NagramCommunityAvatarTapAction: String, CaseIterable {
+    case chat
+    case community
+    case arrow
+}
+
 public enum NagramChatListStartupFolderMode: String {
     case telegramDefault = "telegram"
     case last
@@ -355,6 +361,13 @@ public final class NagramSettings {
     /// 禁用 Community 将多个聊天合并为一个列表项（默认关 = 保持 Telegram 原生行为）
     @NagramDefault("nagram.disableCommunityChatGrouping", false)
     public var disableCommunityChatGrouping: Bool
+    @NagramDefault("nagram.communityAvatarTapAction", NagramCommunityAvatarTapAction.community.rawValue)
+    public var communityAvatarTapAction: String
+
+    public var communityAvatarTapActionValue: NagramCommunityAvatarTapAction {
+        return NagramCommunityAvatarTapAction(rawValue: self.communityAvatarTapAction) ?? .community
+    }
+
     /// 对话列表启动分组（"telegram" / "last" / "specific"）
     @NagramDefault("nagram.chatListStartupFolderMode", NagramChatListStartupFolderMode.telegramDefault.rawValue)
     public var chatListStartupFolderMode: String

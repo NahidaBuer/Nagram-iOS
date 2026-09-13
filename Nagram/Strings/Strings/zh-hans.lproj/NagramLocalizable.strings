@@ -105,6 +105,10 @@
 "Nagram.ChatListMessagePreviewStyle.two" = "两行";
 "Nagram.HideSavedAndArchivedMessagesInList" = "在列表中隐藏收藏夹和归档会话信息";
 "Nagram.DisableCommunityChatGrouping" = "禁用社区会话合并展示";
+"Nagram.CommunityAvatarTapAction" = "点击社区头像行为";
+"Nagram.CommunityAvatarTapAction.chat" = "始终进入聊天";
+"Nagram.CommunityAvatarTapAction.community" = "始终打开社区";
+"Nagram.CommunityAvatarTapAction.arrow" = "仅在点击头像右下角箭头时打开社区页";
 "Nagram.MessagePlaceholderInSaved" = "这里是您的收藏夹会话";
 "Nagram.MessagePlaceholderInArchived" = "这里是您的归档会话";
 "Nagram.ChatListCompact" = "紧凑会话布局";

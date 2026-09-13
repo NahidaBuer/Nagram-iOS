@@ -32,6 +32,7 @@ enum NagramSettingsSyncKeys {
         "nagram.showArchiveInFolders",
         "nagram.hideSavedAndArchivedMessagesInList",
         "nagram.disableCommunityChatGrouping",
+        "nagram.communityAvatarTapAction",
         "nagram.chatListStartupFolderMode",
         "nagram.chatListFolderTabsCompact",
         "nagram.hideAllChatsFolder",

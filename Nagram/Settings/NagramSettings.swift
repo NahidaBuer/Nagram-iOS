@@ -488,6 +488,21 @@ public final class NagramSettings {
     /// 隐藏动态（Stories）
     @NagramDefault("nagram.hideStories", false)
     public var hideStories: Bool
+
+    @NagramDefault("nagram.hideTopStories", false)
+    public var hideTopStories: Bool
+    @NagramDefault("nagram.disableStoryCameraSwipe", false)
+    public var disableStoryCameraSwipe: Bool
+    @NagramDefault("nagram.disableChatAvatarStories", false)
+    public var disableChatAvatarStories: Bool
+
+    public var disableStoryCameraSwipeEffective: Bool {
+        return self.hideStories || self.disableStoryCameraSwipe
+    }
+
+    public var disableChatAvatarStoriesEffective: Bool {
+        return self.hideStories || self.disableChatAvatarStories
+    }
     /// 隐藏标签栏上的权限警告
     @NagramDefault("nagram.hideTabBarPermissionWarnings", false)
     public var hideTabBarPermissionWarnings: Bool

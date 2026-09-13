@@ -29,6 +29,7 @@ import MultilineTextComponent
 import MultilineTextWithEntitiesComponent
 import ShimmerEffect
 import NagramSettings
+import NagramSettingsSignal // MARK: NAGRAM
 import NagramStrings // MARK: NAGRAM
 import GlassBackgroundComponent
 
@@ -503,6 +504,14 @@ public class ChatListItem: ListViewItem {
     let hideCommunityAvatarBadge: Bool
     let displayHiddenPeerIcon: Bool
     
+    // MARK: NAGRAM — 只控制聊天列表头像，保留社区内部和资料页行为。
+    var nagramHidesAvatarStories: Bool {
+        guard case .chatList = self.chatListLocation, !self.useCommunityViewLayout else {
+            return false
+        }
+        return NagramSettings.shared.disableChatAvatarStoriesEffective
+    }
+
     public let selectable: Bool = true
     
     public var approximateHeight: CGFloat {
@@ -1419,6 +1428,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
     var avatarVideoNode: AvatarVideoNode?
     var avatarTapRecognizer: UITapGestureRecognizer?
     private var avatarMediaNode: ChatListMediaPreviewNode?
+    private var nagramAvatarSettingsDisposable: Disposable? // MARK: NAGRAM
     
     private var inlineNavigationMarkLayer: SimpleLayer?
     
@@ -1857,6 +1867,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
 
     deinit {
         self.cachedDataDisposable.dispose()
+        self.nagramAvatarSettingsDisposable?.dispose() // MARK: NAGRAM
     }
     
     override public func secondaryAction(at point: CGPoint) {
@@ -1869,6 +1880,29 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
     func setupItem(item: ChatListItem, synchronousLoads: Bool) {
         let previousItem = self.item
         self.item = item
+
+        // MARK: NAGRAM — 节点级订阅同时覆盖已有列表、搜索结果和节点复用。
+        if self.nagramAvatarSettingsDisposable == nil {
+            self.nagramAvatarSettingsDisposable = (combineLatest(
+                nagramBoolSignal("nagram.hideStories", defaultValue: false),
+                nagramBoolSignal("nagram.disableChatAvatarStories", defaultValue: false)
+            )
+            |> map { $0 || $1 }
+            |> distinctUntilChanged
+            |> deliverOnMainQueue).start(next: { [weak self] _ in
+                // 异步到下一轮，避免初始订阅重入和 UserDefaults setter 的独占访问。
+                Queue.mainQueue().justDispatch { [weak self] in
+                    guard let self, let item = self.item else {
+                        return
+                    }
+                    self.setupItem(item: item, synchronousLoads: false)
+                    if let params = self.layoutParams {
+                        let (_, apply) = self.asyncLayout()(item, params.6, params.1, params.2, params.3, params.4, params.5)
+                        let _ = apply(false, false)
+                    }
+                }
+            })
+        }
         
         var storyState: ChatListItemContent.StoryState?
         if case let .peer(peerData) = item.content {
@@ -1877,6 +1911,11 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             storyState = groupReference.storyState
         }
         
+        // MARK: NAGRAM — 关闭头像动态时同时移除动态圈、直播标记和手势。
+        if item.nagramHidesAvatarStories {
+            storyState = nil
+        }
+
         var peer: EnginePeer?
         var displayAsMessage = false
         var enablePreview = true
@@ -3297,7 +3336,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                             }
                         }
                     }
-                    if textString.length == 0, case let .groupReference(data) = item.content, let storyState = data.storyState, storyState.stats.totalCount != 0 {
+                    if textString.length == 0, !item.nagramHidesAvatarStories, case let .groupReference(data) = item.content, let storyState = data.storyState, storyState.stats.totalCount != 0 { // MARK: NAGRAM — 归档隐藏头像动态时不残留动态计数
                         let storyText: String = item.presentationData.strings.ChatList_ArchiveStoryCount(Int32(storyState.stats.totalCount))
                         textString.append(NSAttributedString(string: storyText, font: textFont, textColor: theme.messageTextColor))
                     }
@@ -5940,7 +5979,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             if case let .peer(peerData) = item.content, case .community = peerData.peer.peer {
                 isCommunity = true
             }
-            var shouldHitTestAvatar = !isCommunity && self.avatarNode.storyStats != nil
+            var shouldHitTestAvatar = !isCommunity && !item.nagramHidesAvatarStories && self.avatarNode.storyStats != nil // MARK: NAGRAM
             if !NagramSettings.shared.disableCommunityChatGrouping, case let .peer(peerData) = item.content, let peer = peerData.peer.peer, peer.containerPeerId != nil { // MARK: NAGRAM — 拆分显示时不再为 Community 入口扩大头像点击区域
                 shouldHitTestAvatar = true
             }
@@ -5965,11 +6004,13 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             case let .peer(peerData):
                 if !NagramSettings.shared.disableCommunityChatGrouping, let peer = peerData.peer.peer, let linkedCommunityId = peer.containerPeerId { // MARK: NAGRAM — 拆分显示时头像恢复原有动态入口
                     item.interaction.openCommunity(linkedCommunityId)
-                } else {
+                } else if !item.nagramHidesAvatarStories { // MARK: NAGRAM — 防止设置刷新前的旧手势打开动态。
                     item.interaction.openStories(.peer(peerData.peer.peerId), self)
                 }
             case .groupReference:
-                item.interaction.openStories(.archive, self)
+                if !item.nagramHidesAvatarStories { // MARK: NAGRAM
+                    item.interaction.openStories(.archive, self)
+                }
             }
         }
     }

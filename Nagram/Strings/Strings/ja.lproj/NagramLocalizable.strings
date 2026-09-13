@@ -300,6 +300,10 @@
 "Nagram.Section.Interface" = "インターフェース";
 "Nagram.HideTabBarPermissionWarnings" = "タブバーの権限警告を非表示";
 "Nagram.HideStories" = "ストーリーズを非表示";
+"Nagram.Section.Stories" = "ストーリーズ";
+"Nagram.HideTopStories" = "上部のストーリーズを非表示";
+"Nagram.DisableStoryCameraSwipe" = "スワイプでのストーリー撮影を無効化";
+"Nagram.DisableChatAvatarStories" = "チャットのアバターのストーリーズを無効化";
 "Nagram.ControlHighlight" = "コントロールのハイライト";
 "Nagram.GlassTransparency" = "Liquid Glass";
 "Nagram.GlassTransparency.system" = "システムに従う";

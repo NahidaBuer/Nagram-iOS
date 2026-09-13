@@ -300,6 +300,10 @@
 "Nagram.Section.Interface" = "介面";
 "Nagram.HideTabBarPermissionWarnings" = "隱藏標籤列權限警告";
 "Nagram.HideStories" = "隱藏動態";
+"Nagram.Section.Stories" = "動態";
+"Nagram.HideTopStories" = "隱藏頂部動態區域";
+"Nagram.DisableStoryCameraSwipe" = "關閉滑動錄製動態";
+"Nagram.DisableChatAvatarStories" = "關閉聊天頭像動態";
 "Nagram.ControlHighlight" = "控件高亮";
 "Nagram.GlassTransparency" = "Liquid Glass";
 "Nagram.GlassTransparency.system" = "跟隨系統";

@@ -59,7 +59,7 @@ private final class NagramSettingsRowTag: ItemListItemTag {
 
 // 行类型:开关 / 单选(disclosure + ActionSheet) / 行内滑杆。
 private enum NagramRow {
-    case toggle(titleKey: String, get: () -> Bool, set: (Bool) -> Void)
+    case toggle(titleKey: String, get: () -> Bool, set: (Bool) -> Void, isVisible: () -> Bool = { true })
     case toggleWithEnabled(titleKey: String, get: () -> Bool, set: (Bool) -> Void, enabled: () -> Bool, enableInteractiveChanges: Bool)
     case choice(titleKey: String, prefix: String, options: [String], current: () -> String, set: (String) -> Void)
     case input(titleKey: String, placeholderKey: String, get: () -> String, set: (String) -> Void, isSecret: Bool, isVisible: () -> Bool)
@@ -84,7 +84,7 @@ private func normalizedNagramDeepLinkToken(_ value: String) -> String {
 
 private func nagramRowTitleKey(_ row: NagramRow) -> String {
     switch row {
-    case let .toggle(titleKey, _, _):
+    case let .toggle(titleKey, _, _, _):
         return titleKey
     case let .toggleWithEnabled(titleKey, _, _, _, _):
         return titleKey
@@ -423,7 +423,12 @@ private func nagramGroups(
             .choice(titleKey: "Nagram.GlassTransparency", prefix: "Nagram.GlassTransparency", options: ["system", "custom"], current: { NagramSettings.shared.glassTransparencyModeValue.rawValue }, set: { NagramSettings.shared.glassTransparencyMode = $0 }),
             .slider(titleKey: "Nagram.GlassTransparency.OverlayOpacity", minValue: 0, maxValue: 100, get: { NagramSettings.shared.glassTransparencyPercent }, set: { NagramSettings.shared.glassTransparencyPercent = $0 }, isVisible: { NagramSettings.shared.glassTransparencyModeValue == .custom }),
             .toggle(titleKey: "Nagram.ControlHighlight", get: { NagramSettings.shared.controlHighlightEnabled }, set: { NagramSettings.shared.controlHighlightEnabled = $0 }),
+        ]),
+        NagramGroup(tab: .general, headerKey: "Nagram.Section.Stories", footerKey: nil, rows: [
             .toggle(titleKey: "Nagram.HideStories", get: { NagramSettings.shared.hideStories }, set: { NagramSettings.shared.hideStories = $0 }),
+            .toggle(titleKey: "Nagram.HideTopStories", get: { NagramSettings.shared.hideTopStories }, set: { NagramSettings.shared.hideTopStories = $0 }, isVisible: { !NagramSettings.shared.hideStories }),
+            .toggle(titleKey: "Nagram.DisableStoryCameraSwipe", get: { NagramSettings.shared.disableStoryCameraSwipe }, set: { NagramSettings.shared.disableStoryCameraSwipe = $0 }, isVisible: { !NagramSettings.shared.hideStories }),
+            .toggle(titleKey: "Nagram.DisableChatAvatarStories", get: { NagramSettings.shared.disableChatAvatarStories }, set: { NagramSettings.shared.disableChatAvatarStories = $0 }, isVisible: { !NagramSettings.shared.hideStories }),
         ]),
         NagramGroup(tab: .general, headerKey: "Nagram.Section.Camera", footerKey: "Nagram.Section.Camera.Footer", rows: [
             .toggle(titleKey: "Nagram.DisableGalleryCamera", get: { NagramSettings.shared.disableGalleryCamera }, set: { NagramSettings.shared.disableGalleryCamera = $0 }),
@@ -749,7 +754,7 @@ public func nagramSettingsController(context: AccountContext, deepLinkPath: Stri
 
     let arguments = NagramSettingsArguments(toggle: { index, value in
         switch flatRows[index] {
-        case let .toggle(_, _, set), let .toggleWithEnabled(_, _, set, _, _):
+        case let .toggle(_, _, set, _), let .toggleWithEnabled(_, _, set, _, _):
             set(value)
             bump()
         default:
@@ -896,7 +901,8 @@ public func nagramSettingsController(context: AccountContext, deepLinkPath: Stri
                         initialScrollToItem = ListViewScrollToItem(index: entries.count, position: .visible, animated: false, curve: .Default(duration: nil), directionHint: .Down)
                     }
                     switch row {
-                    case let .toggle(titleKey, get, _):
+                    case let .toggle(titleKey, get, _, isVisible):
+                        guard isVisible() else { continue }
                         entries.append(.toggle(stableId: rowStableId, section: sectionId, title: ngI18n(titleKey, lang), value: get(), enabled: true, enableInteractiveChanges: true, index: rowIndex))
                     case let .toggleWithEnabled(titleKey, get, _, enabled, enableInteractiveChanges):
                         entries.append(.toggle(stableId: rowStableId, section: sectionId, title: ngI18n(titleKey, lang), value: get(), enabled: enabled(), enableInteractiveChanges: enableInteractiveChanges, index: rowIndex))

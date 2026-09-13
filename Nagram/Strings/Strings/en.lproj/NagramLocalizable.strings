@@ -300,6 +300,10 @@
 "Nagram.Section.Interface" = "Interface";
 "Nagram.HideTabBarPermissionWarnings" = "Hide Tab Bar Permission Warnings";
 "Nagram.HideStories" = "Hide Stories";
+"Nagram.Section.Stories" = "Stories";
+"Nagram.HideTopStories" = "Hide Top Stories Area";
+"Nagram.DisableStoryCameraSwipe" = "Disable Swipe to Record Stories";
+"Nagram.DisableChatAvatarStories" = "Disable Chat Avatar Stories";
 "Nagram.ControlHighlight" = "Control Highlight";
 "Nagram.GlassTransparency" = "Liquid Glass";
 "Nagram.GlassTransparency.system" = "Follow System";
